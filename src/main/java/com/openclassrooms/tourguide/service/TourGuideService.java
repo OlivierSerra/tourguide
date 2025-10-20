@@ -46,6 +46,7 @@ public class TourGuideService {
 		if (testMode) {
 			logger.info("TestMode enabled");
 			logger.debug("Initializing users");
+			InternalTestHelper.setInternalUserNumber(100);
 			initializeInternalUsers();
 			logger.debug("Finished initializing users");
 		}
@@ -144,12 +145,12 @@ public class TourGuideService {
 	}
 
 	/*
-	
+
 		//calculer la distance entre le user te attraction
 	private double distanceInKms(Location userLoc,Attraction attraction) {
 		return getDistance(userLoc, new Location(attraction.latitude, attraction.longitude));
 	}
-	
+
         public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
             List<Attraction> nearbyAttractions = new ArrayList<>();
             for (Attraction attraction : gpsUtil.getAttractions()) {
