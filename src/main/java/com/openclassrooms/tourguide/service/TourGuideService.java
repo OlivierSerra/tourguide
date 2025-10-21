@@ -9,6 +9,10 @@ import com.openclassrooms.tourguide.user.UserReward;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -32,16 +36,20 @@ public class TourGuideService {
 	private Logger logger = LoggerFactory.getLogger(TourGuideService.class);
 	private final GpsUtil gpsUtil;
 	private final RewardsService rewardsService;
-	private final double EarthSemiCircle = 6371;
+	private final double EarthCircle = 6371;
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	boolean testMode = true;
+	private final ExecutorService executor;
 
-	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
+	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService)  {
 		this.gpsUtil = gpsUtil;
 		this.rewardsService = rewardsService;
-		
-		Locale.setDefault(Locale.US);
+
+		int nbThreads =32;
+		this.executor = Executors.newFixedThreadPool(nbThreads);
+
+        Locale.setDefault(Locale.US);
 
 		if (testMode) {
 			logger.info("TestMode enabled");
@@ -90,6 +98,18 @@ public class TourGuideService {
 	/*
 	* pour trouver la position du user
 	 */
+	//version utile pour la gestion du projet
+	public CompletableFuture<VisitedLocation> trackUserLocationAsync(User user) {
+		return CompletableFuture.supplyAsync(
+				() -> gpsUtil.getUserLocation(user.getUserId()), executor
+		).thenApply(visitedLocation -> {
+			user.addToVisitedLocations(visitedLocation);
+			rewardsService.calculateRewards(user);
+			return visitedLocation;
+		});
+	}
+
+	//version utile pour les tests car elle est synchrone
 	public VisitedLocation trackUserLocation(User user) {
 		VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
 		user.addToVisitedLocations(visitedLocation);
@@ -97,11 +117,13 @@ public class TourGuideService {
 		return visitedLocation;
 	}
 
+
 	//version bonne pour le test
 	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
 		Location userLoc = visitedLocation.location;
 		return gpsUtil.getAttractions().stream()
-				.sorted(Comparator.comparingDouble(a -> getDistance(userLoc, a)))
+				.sorted(Comparator.comparingDouble(a -> getDistance(userLoc,
+												new Location(a.latitude, a.longitude))))
 				.limit(5)  // les 5 plus proches
 				.collect(Collectors.toList());
 	}
@@ -140,7 +162,7 @@ public class TourGuideService {
 		double distanceRadians = Math.sqrt(deriveeLat * deriveeLat + deriveeLon * deriveeLon);
 		//pour avoir une distance en km on doit * par le rayon de la Terre (6371 kms
 
-		return EarthSemiCircle*distanceRadians;
+		return EarthCircle*distanceRadians;
 
 	}
 
@@ -185,11 +207,10 @@ public class TourGuideService {
 
 
 	private void addShutDownHook() {
-		Runtime.getRuntime().addShutdownHook(new Thread() {
-			public void run() {
-				tracker.stopTracking();
-			}
-		});
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			tracker.stopTracking();
+			executor.shutdown();
+		}));
 	}
 
 	/**********************************************************************************
